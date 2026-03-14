@@ -1,0 +1,10 @@
+.venv/
+scratch/
+__pycache__/
+*.pyc
+*.pyo
+*.mp4
+*.mov
+*.mkv
+*.wav
+*.m4a
