@@ -167,6 +167,10 @@ GLOBAL STRICT RULES — when in doubt, do NOT cut
 ─────────────────────────────────────────────────────────
 - Repetitions (types 1–3) must be CONSECUTIVE with no unrelated content between them.
 - When a chain has 3+ attempts, keep only the LAST one.
+- The goal is that after all cuts are applied, the remaining utterances stitch together \
+into complete, natural sentences — as if the speaker said it perfectly the first time. \
+Every cut must leave the kept utterances grammatically and semantically continuous with \
+what immediately precedes and follows them.
 - Do NOT cut natural continuations, rhetorical repetition for emphasis, or deliberate \
 re-caps of a previous point.
 - Do NOT remove utterances that contain any real content, even if they also have fillers.
