@@ -71,27 +71,99 @@ def _format_utterances(utterances: list) -> str:
     return "\n".join(lines)
 
 
+def _infer_provider(model: str) -> str:
+    """Infer the LLM provider from the model name."""
+    if model.startswith(("gpt-", "o1", "o3", "o4")):
+        return "openai"
+    if model.startswith("claude-"):
+        return "anthropic"
+    if model.startswith("gemini-"):
+        return "gemini"
+    raise ValueError(
+        f"Cannot infer provider from model name '{model}'. "
+        "Use a model name starting with 'gpt-'/'o1'/'o3' (OpenAI), "
+        "'claude-' (Anthropic), or 'gemini-' (Google)."
+    )
+
+
+def _parse_json(text: str) -> dict:
+    """Parse JSON that may be wrapped in markdown code fences."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text.strip())
+    return json.loads(text)
+
+
+def _call_llm(system_prompt: str, user_prompt: str, model: str) -> dict:
+    """Send system+user prompt to the appropriate LLM provider and return parsed JSON."""
+    provider = _infer_provider(model)
+
+    if provider == "openai":
+        from openai import OpenAI
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is not set. Set it or use --no-ai.")
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        return json.loads(response.choices[0].message.content)
+
+    if provider == "anthropic":
+        import anthropic
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY is not set. Set it or use --no-ai.")
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            temperature=0,
+        )
+        return _parse_json(response.content[0].text)
+
+    if provider == "gemini":
+        import google.generativeai as genai
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is not set. Set it or use --no-ai.")
+        genai.configure(api_key=api_key)
+        gen_model = genai.GenerativeModel(
+            model_name=model,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0,
+            ),
+            system_instruction=system_prompt,
+        )
+        return json.loads(gen_model.generate_content(user_prompt).text)
+
+
 def detect_cuts_ai(words: list, total_duration: float, padding: float = 0.08,
-                   openai_model: str = "gpt-4o") -> list:
+                   model: str = "gpt-4o") -> list:
     """
-    Group words into utterances, send to OpenAI, return (cut_start, cut_end) pairs.
+    Group words into utterances, send to an LLM, return (cut_start, cut_end) pairs.
 
     The AI identifies four things to remove:
       1. Repetition chains (progressive restarts)
       2. Mid-sentence stutters
       3. Semantic corrections (same idea restated)
       4. Filler-only utterances and long silences between utterances
+
+    Supported providers (inferred from model name):
+      - OpenAI:    gpt-*, o1*, o3*  →  OPENAI_API_KEY
+      - Anthropic: claude-*         →  ANTHROPIC_API_KEY
+      - Gemini:    gemini-*         →  GEMINI_API_KEY
     """
-    from openai import OpenAI
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError(
-            "OPENAI_API_KEY environment variable is not set. "
-            "Set it or use --no-ai to fall back to the algorithm."
-        )
-
-    client = OpenAI(api_key=api_key)
     utterances = group_into_utterances(words)
 
     if len(utterances) <= 1:
@@ -201,19 +273,10 @@ last_kept=index of final keeper (last_kept > first)
         "Analyze and return the JSON."
     )
 
-    print(f"[detect_cuts] Sending {len(utterances)} utterances to OpenAI ({openai_model})...")
+    provider = _infer_provider(model)
+    print(f"[detect_cuts] Sending {len(utterances)} utterances to {provider} ({model})...")
 
-    response = client.chat.completions.create(
-        model=openai_model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
-    )
-
-    result = json.loads(response.choices[0].message.content)
+    result = _call_llm(system_prompt, user_prompt, model)
     n = len(utterances)
     cut_ranges = []
 
@@ -301,7 +364,7 @@ def detect_cuts_algorithm(words: list, min_match: int = 2, padding: float = 0.08
 
 def run(transcript_path: str, output_path: str, total_duration: float,
         padding: float = 0.08, use_ai: bool = True,
-        openai_model: str = "gpt-4o", min_match: int = 2) -> None:
+        model: str = "gpt-4o", min_match: int = 2) -> None:
 
     data = json.loads(Path(transcript_path).read_text())
     words = data["words"]
@@ -309,7 +372,7 @@ def run(transcript_path: str, output_path: str, total_duration: float,
 
     if use_ai:
         cut_ranges = detect_cuts_ai(
-            words, total_duration, padding=padding, openai_model=openai_model
+            words, total_duration, padding=padding, model=model
         )
     else:
         print("[detect_cuts] Using algorithmic mode (--no-ai).")

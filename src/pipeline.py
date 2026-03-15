@@ -61,7 +61,13 @@ examples:
         "--ai-model",
         default="gpt-4o",
         metavar="MODEL",
-        help="OpenAI model for cut detection (default: gpt-4o). Requires OPENAI_API_KEY.",
+        help=(
+            "Model for cut detection (default: gpt-4o). "
+            "Provider is inferred from the model name: "
+            "gpt-*/o1*/o3* → OpenAI (OPENAI_API_KEY), "
+            "claude-* → Anthropic (ANTHROPIC_API_KEY), "
+            "gemini-* → Google (GEMINI_API_KEY)."
+        ),
     )
     ai_group.add_argument(
         "--no-ai",
@@ -165,7 +171,7 @@ examples:
             total_duration=total_duration,
             padding=args.padding,
             use_ai=not args.no_ai,
-            openai_model=args.ai_model,
+            model=args.ai_model,
             min_match=args.min_match,
         )
 
