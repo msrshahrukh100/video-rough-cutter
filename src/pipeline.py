@@ -1,4 +1,4 @@
-"""Orchestrator: transcribe → detect cuts → apply cuts."""
+"""Orchestrator: transcribe → mark → detect cuts → apply cuts."""
 
 import argparse
 import json
@@ -29,17 +29,17 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  # Full pipeline (AI-based cut detection, requires OPENAI_API_KEY)
+  # Full pipeline (requires an LLM API key)
   ./cut.sh my_video.mp4 --model base
 
-  # Tune detection without re-transcribing
+  # Re-run marking + timestamp mapping without re-transcribing
   ./cut.sh my_video.mp4 --skip-transcribe
+
+  # Manually edit scratch/<stem>/marked.txt, then re-map timestamps only
+  ./cut.sh my_video.mp4 --skip-transcribe --skip-mark
 
   # Just re-apply cuts (e.g. after editing cuts.json manually)
   ./cut.sh my_video.mp4 --skip-transcribe --skip-detect
-
-  # Use algorithmic mode (no API key needed, exact word matches only)
-  ./cut.sh my_video.mp4 --no-ai
         """,
     )
     parser.add_argument("input_video", help="Path to input video file")
@@ -55,37 +55,18 @@ examples:
         ),
     )
 
-    # AI detection options
-    ai_group = parser.add_argument_group("AI cut detection (default mode)")
-    ai_group.add_argument(
+    # LLM options
+    parser.add_argument(
         "--ai-model",
         default="gpt-4o",
         metavar="MODEL",
         help=(
-            "Model for cut detection (default: gpt-4o). "
+            "Model for text marking (default: gpt-4o). "
             "Provider is inferred from the model name: "
             "gpt-*/o1*/o3* → OpenAI (OPENAI_API_KEY), "
             "claude-* → Anthropic (ANTHROPIC_API_KEY), "
             "gemini-* → Google (GEMINI_API_KEY)."
         ),
-    )
-    ai_group.add_argument(
-        "--no-ai",
-        action="store_true",
-        help=(
-            "Use algorithmic word-match detection instead of OpenAI. "
-            "Faster and free, but only catches exact word repetitions."
-        ),
-    )
-
-    # Algorithm fallback options (only relevant with --no-ai)
-    alg_group = parser.add_argument_group("Algorithmic mode options (--no-ai only)")
-    alg_group.add_argument(
-        "--min-match",
-        type=int,
-        default=2,
-        metavar="INT",
-        help="Min consecutive words that must match to detect a restart (default: 2)",
     )
 
     # Shared options
@@ -114,6 +95,11 @@ examples:
         help="Reuse existing transcript.json (skip Whisper)",
     )
     parser.add_argument(
+        "--skip-mark",
+        action="store_true",
+        help="Reuse existing marked.txt (skip LLM marking step)",
+    )
+    parser.add_argument(
         "--skip-detect",
         action="store_true",
         help="Reuse existing cuts.json (skip cut detection)",
@@ -131,6 +117,7 @@ examples:
     scratch_dir.mkdir(parents=True, exist_ok=True)
 
     transcript_path = scratch_dir / "transcript.json"
+    marked_path = scratch_dir / "marked.txt"
     cuts_path = scratch_dir / "cuts.json"
     output_path = (
         Path(args.output) if args.output
@@ -150,7 +137,7 @@ examples:
         from transcribe import transcribe
         transcribe(str(input_path), args.model, str(transcript_path))
 
-    # Step 2: Detect cuts
+    # Step 2: Detect cuts (mark → align timestamps)
     if args.skip_detect:
         if not cuts_path.exists():
             print(
@@ -160,6 +147,15 @@ examples:
             sys.exit(1)
         print(f"[pipeline] Skipping cut detection, using {cuts_path}")
     else:
+        if args.skip_mark:
+            if not marked_path.exists():
+                print(
+                    f"Error: --skip-mark set but {marked_path} not found.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            print(f"[pipeline] Skipping marking step, using {marked_path}")
+
         print("[pipeline] Getting video duration via ffprobe...")
         total_duration = get_duration(str(input_path))
         print(f"[pipeline] Duration: {total_duration:.2f}s")
@@ -170,9 +166,8 @@ examples:
             str(cuts_path),
             total_duration=total_duration,
             padding=args.padding,
-            use_ai=not args.no_ai,
             model=args.ai_model,
-            min_match=args.min_match,
+            marked_path=str(marked_path),
         )
 
     # Step 3: Apply cuts
