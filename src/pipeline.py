@@ -38,7 +38,10 @@ examples:
   # Manually edit scratch/<stem>/marked.txt, then re-map timestamps only
   ./cut.sh my_video.mp4 --skip-transcribe --skip-mark
 
-  # Just re-apply cuts (e.g. after editing cuts.json manually)
+  # Detect cuts only — review/edit cuts.json before cutting
+  ./cut.sh my_video.mp4 --skip-apply
+
+  # Apply cuts after reviewing/editing cuts.json
   ./cut.sh my_video.mp4 --skip-transcribe --skip-detect
         """,
     )
@@ -48,9 +51,9 @@ examples:
     parser.add_argument(
         "--model",
         choices=["tiny", "base", "small", "medium", "large"],
-        default="base",
+        default="small",
         help=(
-            "Whisper model (default: base). "
+            "Whisper model (default: small). "
             "tiny/base=fast; small/medium=production accuracy; large=best, slow"
         ),
     )
@@ -58,10 +61,10 @@ examples:
     # LLM options
     parser.add_argument(
         "--ai-model",
-        default="gpt-4o",
+        default="gpt-5.4",
         metavar="MODEL",
         help=(
-            "Model for text marking (default: gpt-4o). "
+            "Model for text marking (default: gpt-5.4). "
             "Provider is inferred from the model name: "
             "gpt-*/o1*/o3* → OpenAI (OPENAI_API_KEY), "
             "claude-* → Anthropic (ANTHROPIC_API_KEY), "
@@ -103,6 +106,11 @@ examples:
         "--skip-detect",
         action="store_true",
         help="Reuse existing cuts.json (skip cut detection)",
+    )
+    parser.add_argument(
+        "--skip-apply",
+        action="store_true",
+        help="Stop after generating cuts.json without cutting the video",
     )
 
     args = parser.parse_args()
@@ -171,6 +179,10 @@ examples:
         )
 
     # Step 3: Apply cuts
+    if args.skip_apply:
+        print(f"\n[pipeline] Stopping before apply. Review {cuts_path}, then re-run with --skip-transcribe --skip-detect to cut the video.")
+        return
+
     from apply_cuts import apply_cuts
     apply_cuts(str(input_path), str(cuts_path), str(output_path))
 

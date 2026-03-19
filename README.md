@@ -80,6 +80,9 @@ Output is saved as `<stem>_cut.mp4` next to the input file unless `--output` is 
 # Tune detection without re-running Whisper (fast iteration)
 ./cut.sh lecture.mp4 --skip-transcribe
 
+# Stop after generating cuts.json — review/edit before cutting
+./cut.sh lecture.mp4 --skip-apply
+
 # Re-apply cuts after manually editing cuts.json
 ./cut.sh lecture.mp4 --skip-transcribe --skip-detect
 
@@ -102,7 +105,31 @@ Output is saved as `<stem>_cut.mp4` next to the input file unless `--output` is 
 | `--output` | `<stem>_cut.mp4` | Output file path |
 | `--scratch-dir` | `./scratch` | Directory for intermediate files |
 | `--skip-transcribe` | off | Reuse existing `transcript.json` |
-| `--skip-detect` | off | Reuse existing `cuts.json` |
+| `--skip-mark` | off | Reuse existing `marked.txt` (skip LLM; still re-aligns timestamps) |
+| `--skip-detect` | off | Reuse existing `cuts.json` entirely (skips marked.txt too) |
+| `--skip-apply` | off | Stop after generating `cuts.json` without cutting the video |
+
+## Manual review workflow
+
+Use this workflow when you want to review and edit the AI's markup before cutting the video.
+
+**Step 1 — Transcribe and generate `marked.txt` (no video cut yet):**
+```bash
+./cut.sh video.mp4 --skip-apply
+```
+This runs Whisper and the LLM, saves `scratch/<stem>/marked.txt`, then stops. Open that file — segments marked for cutting are wrapped in `[square brackets]`.
+
+**Step 2 — Edit `marked.txt`:**
+
+Open `scratch/<stem>/marked.txt` in any text editor. Add, remove, or adjust the `[...]` brackets to control exactly what gets cut. Removing every bracketed segment should leave clean, coherent speech.
+
+**Step 3 — Build the video from your edited `marked.txt`:**
+```bash
+./cut.sh video.mp4 --skip-transcribe --skip-mark
+```
+This skips transcription and the LLM step, re-aligns your brackets to timestamps, regenerates `cuts.json`, and cuts the video.
+
+> **Common mistake:** using `--skip-detect` instead of `--skip-mark` will reuse the old `cuts.json` and ignore your edits entirely.
 
 ## Intermediate files
 
