@@ -153,6 +153,17 @@ examples:
                 file=sys.stderr,
             )
             sys.exit(1)
+        # Warn if marked.txt was edited after cuts.json was generated — the
+        # user probably wants --skip-mark instead of --skip-detect.
+        if (marked_path.exists()
+                and marked_path.stat().st_mtime > cuts_path.stat().st_mtime):
+            print(
+                f"Warning: {marked_path.name} is newer than {cuts_path.name}. "
+                f"Your edits to marked.txt have NOT been applied.\n"
+                f"  To apply them, re-run without --skip-detect "
+                f"(use --skip-transcribe --skip-mark instead).",
+                file=sys.stderr,
+            )
         print(f"[pipeline] Skipping cut detection, using {cuts_path}")
     else:
         if args.skip_mark:
@@ -163,6 +174,9 @@ examples:
                 )
                 sys.exit(1)
             print(f"[pipeline] Skipping marking step, using {marked_path}")
+        elif marked_path.exists():
+            marked_path.unlink()
+            print(f"[pipeline] Removed stale {marked_path.name} — will re-mark.")
 
         print("[pipeline] Getting video duration via ffprobe...")
         total_duration = get_duration(str(input_path))
